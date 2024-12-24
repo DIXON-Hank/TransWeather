@@ -1,0 +1,1 @@
+python train.py -exp_name debug -train_batch_size 32 -learning_rate 0.001 -num_epochs 100

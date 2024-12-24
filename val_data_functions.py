@@ -33,8 +33,8 @@ class ValData(data.Dataset):
             wd_new = 1024
         wd_new = int(16*np.ceil(wd_new/16.0))
         ht_new = int(16*np.ceil(ht_new/16.0))
-        input_img = input_img.resize((wd_new,ht_new), Image.ANTIALIAS)
-        gt_img = gt_img.resize((wd_new, ht_new), Image.ANTIALIAS)
+        input_img = input_img.resize((wd_new,ht_new), Image.Resampling.LANCZOS)
+        gt_img = gt_img.resize((wd_new, ht_new), Image.Resampling.LANCZOS)
 
         # --- Transform to tensor --- #
         transform_input = Compose([ToTensor(), Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
