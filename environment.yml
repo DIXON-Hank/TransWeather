@@ -1,5 +1,6 @@
 name: transweather
 channels:
+  - pytorch
   - defaults
 dependencies:
   - _libgcc_mutex

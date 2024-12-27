@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from torchvision.utils import save_image
 
 def psnr(pred_image, gt, max_val=1.0):
     """
@@ -92,10 +93,11 @@ def validation(net, dataloader, device):
     with torch.no_grad():  # Disable gradient computation
         for batch_id, (input_image, gt_image) in enumerate(dataloader):
             input_image = input_image.to(device)
+            
             gt_image = gt_image.to(device)
 
             # Model prediction
-            pred_image = net(input_image).clamp(0, 1)
+            pred_image = net(input_image)
 
             # Compute PSNR and SSIM
             batch_psnr = psnr(pred_image, gt_image)
@@ -104,8 +106,8 @@ def validation(net, dataloader, device):
             psnr_list.extend(batch_psnr.cpu().numpy())
             ssim_list.extend(batch_ssim.cpu().numpy())
 
-            if batch_id % 100 == 0:
-                print(f"Validation Batch {batch_id}: PSNR = {torch.mean(batch_psnr).item():.2f}, SSIM = {torch.mean(batch_ssim).item():.4f}")
+            # if batch_id % 100 == 0:
+            #     print(f"Validation Batch {batch_id}: PSNR = {torch.mean(batch_psnr).item():.2f}, SSIM = {torch.mean(batch_ssim).item():.4f}")
 
     # Calculate averages
     avg_psnr = torch.tensor(psnr_list).mean().item()

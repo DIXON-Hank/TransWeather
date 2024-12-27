@@ -1,6 +1,6 @@
 import math
 
-def adjust_learning_rate(optimizer, epoch, initial_lr=0.005, T_max=50, eta_min=0):
+def adjust_learning_rate(optimizer, epoch, initial_lr, T_max=50, eta_min=1e-5):
     """
     Args:
         initial_lr (float): starting learning rate

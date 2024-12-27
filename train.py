@@ -4,8 +4,11 @@ import argparse
 import torch.nn as nn
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+import torchvision.transforms as transforms
+from PIL import Image
+from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader, SubsetRandomSampler
-from dataloader import myDataloader
+from dataloader import myDataloader, create_random_subset
 from utils.tools import print_log, adjust_learning_rate
 from utils.evaluation import psnr, validation
 from torchvision.models import vgg16
@@ -14,7 +17,7 @@ import os
 import numpy as np
 import random
 
-from transweather_model import Transweather, SimpleConvNet
+from transweather_model import Transweather
 
 plt.switch_backend('agg')
 
@@ -41,6 +44,8 @@ val_batch_size = args.val_batch_size
 exp_name = args.exp_name
 num_epochs = args.num_epochs
 
+# set tensorboard writer
+writer = SummaryWriter(log_dir="./exp/.logs")
 
 #set seed
 seed = args.seed
@@ -55,8 +60,9 @@ print('--- Hyper-parameters for training ---')
 print('learning_rate: {}\ncrop_size: {}\ntrain_batch_size: {}\nval_batch_size: {}\nlambda_loss: {}'.format(learning_rate, crop_size,
       train_batch_size, val_batch_size, lambda_loss))
 
-
+os.makedirs("./exp/{}".format(exp_name), exist_ok=True)
 root_dir = '/home/gagagk16/Rain/Derain/Dataset/mydataset/'
+DEBUG = False
 
 # --- Gpu device --- #
 device_ids = [Id for Id in range(torch.cuda.device_count())]
@@ -64,8 +70,11 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 # --- Define the network --- #
-net = SimpleConvNet()
-
+net = Transweather()
+denormalize = transforms.Compose([
+    transforms.Normalize(mean=[0, 0, 0], std=[1/0.5, 1/0.5, 1/0.5]),  # 假设训练时使用的 std=[0.5, 0.5, 0.5]
+    transforms.Normalize(mean=[-0.5, -0.5, -0.5], std=[1, 1, 1]),       # 假设训练时使用的 mean=[0.5, 0.5, 0.5]
+])
 
 # --- Build optimizer --- #
 optimizer = torch.optim.Adam(net.parameters(), lr=learning_rate)
@@ -100,72 +109,98 @@ loss_network.eval()
 
 # --- Load training data and validation/test data --- #
 
-train_subsets = ["raindrop"]
-val_subsets = ["raindrop"]
+train_types = ["all"]
+val_types = ["all"]
 
 # --- Load training data and validation/test data --- #
-train_dataloader = DataLoader(myDataloader(crop_size, root_dir, "train", train_subsets), 
-                              batch_size=train_batch_size, shuffle=True, num_workers=8)
-val_dataloader = DataLoader(myDataloader(crop_size, root_dir, "val", val_subsets), 
-                            batch_size=val_batch_size, shuffle=False, num_workers=8)
+train_dataset = myDataloader(root_dir, crop_size, mode="train", data_types=train_types)
+val_dataset = myDataloader(root_dir, crop_size, mode="val", data_types=val_types)
+
+if DEBUG:
+    train_dataset = create_random_subset(train_dataset, 0.1)
+    val_dataset = create_random_subset(val_dataset, 0.1)
+train_dataloader = DataLoader(train_dataset, batch_size=train_batch_size, shuffle=True, num_workers=8)
+val_dataloader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False, num_workers=8)
+
+print("Using {} train pairs".format(len(train_dataset)))
+print("Using {} val pairs".format(len(val_dataset)))
+
 
 # --- Previous PSNR and SSIM in testing --- #
 net.eval()
 old_val_psnr, old_val_ssim = validation(net, val_dataloader, device)
 print('old_val_psnr: {0:.2f}, old_val_ssim: {1:.4f}'.format(old_val_psnr, old_val_ssim))
 
+print("-" * 10, "Starting Training", "-" * 10)
 net.train()
+try:
+    for epoch in range(epoch_start, num_epochs):
+        psnr_list = []
+        start_time = time.time()
+        current_lr = adjust_learning_rate(optimizer, epoch, learning_rate)
+        print("Current lr:", current_lr)
+    #-------------------------------------------------------------------------------------------------------------
+        for batch_id, train_data in enumerate(train_dataloader):
 
-for epoch in range(epoch_start,num_epochs):
-    psnr_list = []
-    start_time = time.time()
-    adjust_learning_rate(optimizer, epoch)
-#-------------------------------------------------------------------------------------------------------------
-    for batch_id, train_data in enumerate(train_dataloader):
+            input_image, gt = train_data  
+            input_image = input_image.to(device)
+            gt = gt.to(device)
 
-        input_image, gt = train_data
-        input_image = input_image.to(device)
-        gt = gt.to(device)
+            # --- Zero the parameter gradients --- #
+            optimizer.zero_grad()
 
-        # --- Zero the parameter gradients --- #
-        optimizer.zero_grad()
+            # --- Forward + Backward + Optimize --- #
+            net.train()
+            pred_image = net(input_image)
 
-        # --- Forward + Backward + Optimize --- #
-        net.train()
-        pred_image = net(input_image)
+            smooth_loss = F.smooth_l1_loss(pred_image, gt)
+            perceptual_loss = loss_network(pred_image, gt)
 
-        smooth_loss = F.smooth_l1_loss(pred_image, gt)
-        perceptual_loss = loss_network(pred_image, gt)
+            loss = smooth_loss + lambda_loss * perceptual_loss 
 
-        loss = smooth_loss + lambda_loss * perceptual_loss 
+            loss.backward()
+            optimizer.step()
 
-        loss.backward()
-        optimizer.step()
+            # --- To calculate average PSNR --- #
+            psnr_list.extend(psnr(pred_image, gt))
 
-        # --- To calculate average PSNR --- #
-        psnr_list.extend(psnr(pred_image, gt))
+            if not (batch_id % 100):
+                print('Epoch: {0}, Iteration: {1}'.format(epoch, batch_id))
+                print('Loss:{}'.format(loss))
 
-        if not (batch_id % 100):
-            print('Epoch: {0}, Iteration: {1}'.format(epoch, batch_id))
+            # --- TensorBoard: 记录训练损失 --- #
+            writer.add_scalar("Loss/Train", loss.item(), epoch * len(train_dataloader) + batch_id)
 
-    # --- Calculate the average training PSNR in one epoch --- #
-    train_psnr = sum(psnr_list) / len(psnr_list)
+        # --- Calculate the average training PSNR in one epoch --- #
+        train_psnr = sum(psnr_list) / len(psnr_list)
 
-    # --- Save the network parameters --- #
-    torch.save(net.state_dict(), './exp/{}/latest'.format(exp_name))
+        # --- Save the network parameters --- #
+        torch.save(net.state_dict(), './exp/{}/latest'.format(exp_name))
 
-    # --- Use the evaluation model in testing --- #
-    net.eval()
+        # --- Use the evaluation model in testing --- #
+        net.eval()
 
-    val_psnr, val_ssim = validation(net, val_dataloader, device)
-    one_epoch_time = time.time() - start_time
-    print("Validation on {}".format(val_subsets))
-    print_log(epoch+1, num_epochs, one_epoch_time, train_psnr, val_psnr, val_ssim, exp_name) # TODO: complete this
+        val_psnr, val_ssim = validation(net, val_dataloader, device)
+        one_epoch_time = time.time() - start_time
+        print("Validation on {}".format(val_types))
+        print_log(epoch+1, num_epochs, one_epoch_time, train_psnr, val_psnr, val_ssim, exp_name)
 
-    # --- update the network weight --- #
-    if val_psnr >= old_val_psnr:
-        torch.save(net.state_dict(), './exp/{}/best'.format(exp_name))
-        print('model saved')
-        old_val_psnr = val_psnr
+        # --- TensorBoard: 记录 PSNR 和 SSIM --- #
+        writer.add_scalar("PSNR/Train", train_psnr, epoch)
+        writer.add_scalar("PSNR/Validation", val_psnr, epoch)
+        writer.add_scalar("SSIM/Validation", val_ssim, epoch)
+        writer.add_scalar("learning_rate", learning_rate, epoch)
 
-        # Note that we find the best model based on validating with raindrop data. 
+        # --- TensorBoard: 每 10 个 epoch 记录图像 --- #
+        if epoch % 10 == 0:
+            writer.add_images("Input Images", denormalize(input_image), epoch)
+            writer.add_images("Predicted Images", denormalize(pred_image.clamp(-1, 1)), epoch)
+            writer.add_images("Ground Truth", denormalize(gt), epoch)
+
+        # --- update the network weight --- #
+        if val_psnr >= old_val_psnr:
+            torch.save(net.state_dict(), './exp/{}/best'.format(exp_name))
+            print('model saved')
+            old_val_psnr = val_psnr
+finally:
+    writer.close() 

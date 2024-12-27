@@ -765,10 +765,10 @@ class convprojection_base(nn.Module):
 
 ## The following is the network which can be fine-tuned for specific datasets
 
-class Transweather_base(nn.Module):
+class Transweather(nn.Module):
 
     def __init__(self, path=None, **kwargs):
-        super(Transweather_base, self).__init__()
+        super(Transweather, self).__init__()
 
         self.Tenc = Tenc()
         
@@ -806,10 +806,10 @@ class Transweather_base(nn.Module):
 ## The following is original network found in paper which solves all-weather removal problems 
 ## using a single model
 
-class Transweather(nn.Module):
+class Transweather_0(nn.Module):
 
     def __init__(self, path=None, **kwargs):
-        super(Transweather, self).__init__()
+        super(Transweather_0, self).__init__()
 
         self.Tenc = Tenc()
         
@@ -846,27 +846,3 @@ class Transweather(nn.Module):
         self.load_state_dict(checkpoint_state_dict_noprefix, strict=False)
         del checkpoint
         torch.cuda.empty_cache()
-
-class SimpleConvNet(nn.Module):
-    def __init__(self):
-        super(SimpleConvNet, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1),  # 输入通道3 -> 输出通道16
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # 下采样，大小减半
-            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),  # 输入通道16 -> 输出通道32
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2)  # 再次下采样
-        )
-        self.decoder = nn.Sequential(
-            nn.ConvTranspose2d(32, 16, kernel_size=2, stride=2),  # 上采样，大小加倍
-            nn.ReLU(),
-            nn.ConvTranspose2d(16, 3, kernel_size=2, stride=2),  # 上采样回到原始大小
-            nn.Sigmoid()  # 输出范围 [0, 1]
-        )
-
-    def forward(self, x):
-        x = self.encoder(x)
-        x = self.decoder(x)
-        return x
-
