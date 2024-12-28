@@ -1,4 +1,3 @@
-from transweather_model import Transweather
 from mymodel import UNetTransformerWithAttentionFusion
 from torchinfo import summary
 import torch

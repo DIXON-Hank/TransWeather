@@ -17,14 +17,14 @@ import os
 import numpy as np
 import random
 
-from transweather_model import Transweather
+from mymodel import UNetTransformerWithAttentionFusion
 
 plt.switch_backend('agg')
 
 # --- Parse hyper-parameters  --- #
 parser = argparse.ArgumentParser(description='Hyper-parameters for network')
 parser.add_argument('-learning_rate', help='Set the learning rate', default=2e-4, type=float)
-parser.add_argument('-crop_size', help='Set the crop_size', default=[256, 256], nargs='+', type=int)
+parser.add_argument('-crop_size', help='Set the crop_size', default=[224, 224], nargs='+', type=int)
 parser.add_argument('-train_batch_size', help='Set the training batch size', default=8, type=int)
 parser.add_argument('-epoch_start', help='Starting epoch number of the training', default=0, type=int)
 parser.add_argument('-lambda_loss', help='Set the lambda in loss function', default=0.04, type=float)
@@ -62,7 +62,7 @@ print('learning_rate: {}\ncrop_size: {}\ntrain_batch_size: {}\nval_batch_size: {
 
 os.makedirs("./exp/{}".format(exp_name), exist_ok=True)
 root_dir = '/home/gagagk16/Rain/Derain/Dataset/mydataset/'
-DEBUG = False
+DEBUG = True
 
 # --- Gpu device --- #
 device_ids = [Id for Id in range(torch.cuda.device_count())]
@@ -70,7 +70,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 # --- Define the network --- #
-net = Transweather()
+net = UNetTransformerWithAttentionFusion()
 denormalize = transforms.Compose([
     transforms.Normalize(mean=[0, 0, 0], std=[1/0.5, 1/0.5, 1/0.5]),  # 假设训练时使用的 std=[0.5, 0.5, 0.5]
     transforms.Normalize(mean=[-0.5, -0.5, -0.5], std=[1, 1, 1]),       # 假设训练时使用的 mean=[0.5, 0.5, 0.5]
