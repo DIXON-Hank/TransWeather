@@ -10,7 +10,7 @@ from torchvision.transforms import Compose
 import os
 import numpy as np
 import random
-from transweather_model import Transweather,UNet
+from mymodel import UNetTransformerWithAttentionFusion
 
 # --- Parse hyper-parameters --- #
 parser = argparse.ArgumentParser(description='Hyper-parameters for network')
@@ -51,7 +51,7 @@ data_loader = DataLoader(
 )
 
 # --- Define the network --- #
-net = Transweather().cuda()
+net = UNetTransformerWithAttentionFusion()
 net = nn.DataParallel(net, device_ids=device_ids)
 net = net.to(device)
 

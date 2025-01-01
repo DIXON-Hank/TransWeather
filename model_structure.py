@@ -9,4 +9,4 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = UNetTransformerWithAttentionFusion()
 model = model.to(device)
 
-summary(model, input_size=(16, 3, 224, 224))
+summary(model, input_size=(1, 3, 256, 512))

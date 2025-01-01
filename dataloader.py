@@ -11,24 +11,25 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # --- Training dataset --- #
 class myDataloader(Dataset):
-    def __init__(self, root_dir, crop_size=[256, 256], mode="train", data_types="all"):
+    def __init__(self, root_dir, crop_size=[224, 224], mode="train", data_types="all"):
         super().__init__()
         self.crop_size = crop_size
         self.mode = mode # train or val
         self.data_types = data_types
         self.input_paths = []
         self.gt_paths = []
-        if mode in {"train", "val"}:
+        if mode in {"train", "val", "val_all"}:
             for data_type in data_types:
                 input_dir = os.path.join(root_dir, data_type, mode)
                 gt_dir = os.path.join(root_dir, 'gt')
 
                 input_files = sorted(os.listdir(input_dir))
                 for input_file in input_files:
-                    gt_name = self.get_gt_file(input_file)
-                    gt_file = os.path.join(gt_dir, mode, gt_name)
+                    # gt_name = self.get_gt_file(input_file)
+                    gt_name = input_file
+                    gt_path = os.path.join(gt_dir, mode, gt_name)
                     self.input_paths.append(os.path.join(input_dir, input_file))
-                    self.gt_paths.append(gt_file)
+                    self.gt_paths.append(gt_path)
         elif mode == "test":
             input_files = sorted(os.listdir(root_dir))
             self.input_paths = [os.path.join(root_dir, fname) for fname in input_files]
@@ -51,24 +52,26 @@ class myDataloader(Dataset):
             gt_img = gt_img.resize((max(crop_width, width), max(crop_height, height)), Image.Resampling.LANCZOS)
 
         # random cropping
-        # TODO: add data augmentation?
+        width, height = input_img.size
+        # TODO: add data augmentation? flipping lightning
         if self.mode == "train":
             x, y = randrange(0, width - crop_width + 1), randrange(0, height - crop_height + 1)
             input_crop_img = input_img.crop((x, y, x + crop_width, y + crop_height))
             gt_crop_img = gt_img.crop((x, y, x + crop_width, y + crop_height))
-        elif self.mode == "val" or self.mode == "test":
-            wd_new,ht_new = input_img.size
-            if ht_new>wd_new and ht_new>1024:
-                wd_new = int(np.ceil(wd_new*1024/ht_new))
-                ht_new = 1024
-            elif ht_new<=wd_new and wd_new>1024:
-                ht_new = int(np.ceil(ht_new*1024/wd_new))
-                wd_new = 1024
-            wd_new = int(16*np.ceil(wd_new/16.0))
-            ht_new = int(16*np.ceil(ht_new/16.0))
-            input_crop_img = input_img.resize((wd_new,ht_new), Image.Resampling.LANCZOS)
-            gt_crop_img = gt_img.resize((wd_new, ht_new), Image.Resampling.LANCZOS)
+        else:
+            target_width, target_height = (768, 384) if width >= 768 and height >= 384 else (512, 256)
+            input_img = input_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+            gt_img = gt_img.resize((target_width, target_height), Image.Resampling.LANCZOS)
 
+            center_x, center_y = input_img.width // 2, input_img.height // 2
+            left = center_x - target_width // 2
+            top = center_y - target_height // 2
+            right = center_x + target_width // 2
+            bottom = center_y + target_height // 2
+
+            input_crop_img = input_img.crop((left, top, right, bottom))
+            gt_crop_img = gt_img.crop((left, top, right, bottom))
+        
         # --- Transform to tensor --- #
         transform_input = Compose([ToTensor(), Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
         transform_gt = Compose([ToTensor(), Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])

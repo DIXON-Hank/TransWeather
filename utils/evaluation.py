@@ -1,8 +1,7 @@
 import torch
 import torch.nn.functional as F
-from torchvision.utils import save_image
 
-def psnr(pred_image, gt, max_val=1.0):
+def psnr(pred_image, gt, max_val=2.0):
     """
     Compute PSNR (Peak Signal-to-Noise Ratio) between predicted and ground truth images.
 
@@ -17,6 +16,10 @@ def psnr(pred_image, gt, max_val=1.0):
     # Ensure input tensors have the same shape
     assert pred_image.shape == gt.shape, "Predicted and ground truth images must have the same shape."
 
+    # Ensure using correct data type
+    pred_image = pred_image.float()
+    gt = gt.float()
+
     # Compute Mean Squared Error (MSE)
     mse = torch.mean((pred_image - gt) ** 2, dim=(-3, -2, -1))  # Average over C, H, W dimensions
 
@@ -27,7 +30,8 @@ def psnr(pred_image, gt, max_val=1.0):
     psnr_value = 10 * torch.log10(max_val ** 2 / mse)
     return psnr_value
 
-def ssim(pred_image, gt, max_val=1.0, window_size=11, k1=0.01, k2=0.03):
+
+def ssim(pred_image, gt, max_val=2.0, window_size=11, k1=0.01, k2=0.03):
     """
     Compute SSIM (Structural Similarity Index Measure) between predicted and ground truth images.
 
@@ -46,14 +50,18 @@ def ssim(pred_image, gt, max_val=1.0, window_size=11, k1=0.01, k2=0.03):
     assert pred_image.shape == gt.shape, "Predicted and ground truth images must have the same shape."
     B, C, H, W = pred_image.shape
 
+    # Ensure using correct data type
+    pred_image = pred_image.float()
+    gt = gt.float()
+
     # Gaussian kernel
     def create_window(window_size, channel):
-        coords = torch.arange(window_size).float() - window_size // 2
+        coords = torch.arange(window_size, dtype=torch.float32) - window_size // 2
         g = torch.exp(-(coords**2) / (2 * 1.5**2))
         g /= g.sum()
         window = g.unsqueeze(1) @ g.unsqueeze(0)
         window = window.unsqueeze(0).unsqueeze(0).expand(channel, 1, window_size, window_size)
-        return window.to(pred_image.device)
+        return window.to(pred_image.device, dtype=torch.float32)
 
     window = create_window(window_size, C)
     padding = window_size // 2
@@ -93,7 +101,6 @@ def validation(net, dataloader, device):
     with torch.no_grad():  # Disable gradient computation
         for batch_id, (input_image, gt_image) in enumerate(dataloader):
             input_image = input_image.to(device)
-            
             gt_image = gt_image.to(device)
 
             # Model prediction
@@ -106,8 +113,8 @@ def validation(net, dataloader, device):
             psnr_list.extend(batch_psnr.cpu().numpy())
             ssim_list.extend(batch_ssim.cpu().numpy())
 
-            # if batch_id % 100 == 0:
-            #     print(f"Validation Batch {batch_id}: PSNR = {torch.mean(batch_psnr).item():.2f}, SSIM = {torch.mean(batch_ssim).item():.4f}")
+            if batch_id % 100 == 0:
+                print(f"Validation Batch {batch_id}: PSNR = {torch.mean(batch_psnr).item():.2f}, SSIM = {torch.mean(batch_ssim).item():.4f}")
 
     # Calculate averages
     avg_psnr = torch.tensor(psnr_list).mean().item()
